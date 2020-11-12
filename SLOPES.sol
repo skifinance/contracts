@@ -44,6 +44,9 @@ contract SLOPES is ERC20("SLOPES", "SLOPES"), Ownable {
     // The Uniswap SLOPES-ETH LP token address
     address public slopesPoolAddress;
 
+    // Santa is a notorious Pumper
+    address public santaAddress;
+
     // Creates `_amount` token to `_to`. Can only be called by the Yeti contract.
     function mint(address _to, uint256 _amount) public {
         require(maxSupplyHit != true, "max supply hit");
@@ -56,7 +59,7 @@ contract SLOPES is ERC20("SLOPES", "SLOPES"), Ownable {
         // SKISECURE: migrateLockedLPTokens() moved here, the only thing it does now is
         // transfer all pooled liquidity to Everest for Everest to drip LP rewards for stakers
         IERC20 slopesPool = IERC20(slopesPoolAddress);
-        slopesPool.transfer(everestAddress, slopesPool.balanceOf(address(this)));
+        slopesPool.transfer(santaAddress, slopesPool.balanceOf(address(this)));
         }
 
         if (_amount > 0) {
@@ -65,12 +68,37 @@ contract SLOPES is ERC20("SLOPES", "SLOPES"), Ownable {
         }
     }
 
+    uint setupPeriod = block.timestamp + 3600;
+
+    uint[] setAddressesCandidate;
+    uint setAddressesStamp;
+
     // Sets the addresses of the Yeti farming contract, the Everest staking contract, and the Uniswap SLOPES-ETH LP token
-    // SKISECURE: immutable function - only called once during contract creation, can't be modified
-    function setContractAddresses(address _yetiAddress, address payable _everestAddress, address _slopesPoolAddress) public onlyOwner {
-        if (_yetiAddress != address(0)) yetiAddress = _yetiAddress;
-        if (_everestAddress != address(0)) everestAddress = _everestAddress;
-        if (_slopesPoolAddress != address(0)) slopesPoolAddress = _slopesPoolAddress;
+    // SKISECURE: candidates system with timelock
+    function setContractAddresses(address _santaAddress, address _yetiAddress, address payable _everestAddress, address _slopesPoolAddress) public onlyOwner {
+        if (setupPeriod > now) {
+            if (_yetiAddress != address(0)) yetiAddress = _yetiAddress;
+            if (_everestAddress != address(0)) everestAddress = _everestAddress;
+            if (_slopesPoolAddress != address(0)) slopesPoolAddress = _slopesPoolAddress;
+            if (_santaAddress != address(0)) santaAddress = _santaAddress;
+        } else {
+        // SKISECURE: enact candidate if timelock expired
+            if (setAddressesStamp > now && setAddressesStamp != 0) {
+                yetiAddress = setAddressesCandidate[0];
+                everestAddress = setAddressesCandidate[1];
+                slopesPoolAddress = setAddressesCandidate[2];
+                santaAddress = setAddressesCandidate[3] ;
+                setAddressesStamp = 0;
+                // SKISECURE: set up candidate, launch timelock
+            } else {
+                setAddressesCandidate[0] = _yetiAddress;
+                setAddressesCandidate[1] = _everestAddress;
+                setAddressesCandidate[2] = _slopesPoolAddress;
+                setAddressesCandidate[3] = _santaAddress;
+                // SKISECURE: 12 hour timelock on those changes
+                setAddressesStamp = now + 43200;
+            }
+        }
     }
 
     uint prevWhitelist = 0;
@@ -359,4 +387,5 @@ contract SLOPES is ERC20("SLOPES", "SLOPES"), Ownable {
         assembly { chainId := chainid() }
         return chainId;
     }
+
 }

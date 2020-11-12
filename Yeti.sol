@@ -18,7 +18,8 @@ import './IUniswapV2Router02.sol';
 import './UniStakingInterfaces.sol';
 import './SLOPES.sol';
 import './Everest.sol';
-import './IERC1155.sol'
+import './IERC1155.sol';
+import './SkiPerks.sol';
 
 // Yeti is the master of SLOPES. He can make SLOPES, is a fair guy, and a great instructor.
 contract Yeti is Ownable {
@@ -73,7 +74,9 @@ contract Yeti is Ownable {
     // Dev address
     address payable public devAddress;
     //SKISECURE: NFT Ski address for farming perks
-    address nftSkiAddress;
+    address public nftSkiAddress;
+    //SKISECURE: contract defining logic for NFT yield boosting
+    address public skiPerksAddress;
 
 
     // Info of each pool.
@@ -117,14 +120,19 @@ contract Yeti is Ownable {
     event SlopesBuyback(address indexed user, uint256 ethSpentOnSlopes, uint256 slopesBought);
     event SlopesPoolActive(address indexed user, uint256 slopesLiquidity, uint256 ethLiquidity);
 
+
     constructor(
         SLOPES _slopes,
         address payable _devAddress,
-        uint256 _startBlock
+        uint256 _startBlock,
+        address _nftSkiAddress,
+        address _skiPerksAddress
     ) public {
         slopes = _slopes;
         devAddress = _devAddress;
         startBlock = _startBlock;
+        nftSkiAddress = _nftSkiAddress;
+        skiPerksAddress = _skiPerksAddress;
         weth = IERC20(uniswapRouter.WETH());
 
         // Calculate the address the SLOPES-ETH Uniswap pool will exist at
@@ -226,7 +234,10 @@ contract Yeti is Ownable {
             accSlopesPerShare = accSlopesPerShare.add(slopesReward.mul(1e12).div(lpSupply));
         }
 
-        return user.staked.mul(accSlopesPerShare).div(1e12).sub(user.rewardDebt);
+        SkiPerks perks = SkiPerks(skiPerksAddress);
+        uint256 pendingBoost = perks.skiBoost(nftSkiAddress, _user);
+
+        return user.staked.mul(pendingBoost).div(100).mul(accSlopesPerShare).div(1e12).sub(user.rewardDebt);
     }
 
     // Get the pending UNIs for a user from 1 pool
@@ -524,20 +535,6 @@ contract Yeti is Ownable {
         depositFor(_pid, msg.sender, _amount);
     }
 
-    // SKISECURE: calculate perks for owning SKI NFTs
-    function skiBoost() public view returns (uint256) {
-        IERC1155 internal skis = IERC1155(nftSkiAddress);
-        return (10 * skis.balanceOf(msg.sender, 1) +
-                7 * skis.balanceOf(msg.sender, 1) +
-                6 * skis.balanceOf(msg.sender, 1) +
-                5 * skis.balanceOf(msg.sender, 1) +
-                2 * skis.balanceOf(msg.sender, 1) +
-                2 * skis.balanceOf(msg.sender, 1) +
-                2 * skis.balanceOf(msg.sender, 1) +
-                2 * skis.balanceOf(msg.sender, 1) +
-        )
-    }
-
     // Deposits LP tokens in the specified pool on behalf of another user
     function depositFor(uint256 _pid, address _user, uint256 _amount) public {
         require(msg.sender == tx.origin || contractWhitelist[msg.sender] == true, "no contracts");
@@ -661,8 +658,10 @@ contract Yeti is Ownable {
         }
 
         // SKISECURE: boost yield for Ski NFT owners
-        uint256 pendingBoost = skiBoost();
-        uint256 userSlopesPending = user.staked.mul(pendingBoost).mul(pool.accSlopesPerShare).div(1e12).sub(user.rewardDebt);
+
+        SkiPerks perks = SkiPerks(skiPerksAddress);
+        uint256 pendingBoost = perks.skiBoost(nftSkiAddress, _user);
+        uint256 userSlopesPending = user.staked.mul(pendingBoost).div(100).mul(pool.accSlopesPerShare).div(1e12).sub(user.rewardDebt);
         if (userSlopesPending > 0) {
             user.claimed += userSlopesPending;
             _safeSlopesTransfer(_user, userSlopesPending);
@@ -882,7 +881,7 @@ contract Yeti is Ownable {
     // The following functions can only be called by the owner
     // (the SLOPES token holder governance contract)
 
-    // SKISECURE: setup period for 1 hour when onlyOwner function ignore timelocks
+    // SKISECURE: setup period for 1 hour when onlyOwner function ignores timelocks
     uint setupPeriod = block.timestamp + 3600;
 
 
@@ -961,7 +960,8 @@ contract Yeti is Ownable {
             } else {
                 setAprCandidate[0] = _pid;
                 setAprCandidate[1] = _apr;
-                setAprStamp = now + 86400;
+                // SKISECURE: apr has a reduced timelock, 10 minutes
+                setAprStamp = now + 600;
             }
         }
     }

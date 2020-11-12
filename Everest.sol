@@ -16,7 +16,8 @@ import './IERC20.sol';
 import './IUniswapV2Router02.sol';
 import './SLOPES.sol';
 import './Yeti.sol';
-import './IERC1155.sol'
+import './IERC1155.sol';
+import './SkiPerks.sol';
 
 // The Everest staking contract becomes active after the max supply it hit, and is where SLOPES-ETH LP token stakers will continue to receive dividends from other projects in the SLOPES ecosystem
 contract Everest is Ownable {
@@ -59,7 +60,7 @@ contract Everest is Ownable {
     uint256 public lastPayout;
     // The total amount of pending SLOPES available for stakers to claim
     uint256 public totalPendingSlopes;
-    // Accumulated SLOPESs per share, times 1e12.
+    // Accumulated SLOPES per share, times 1e12.
     uint256 public accSlopesPerShare;
     // The total amount of SLOPES-ETH LP tokens staked in the contract
     uint256 public totalStaked;
@@ -166,7 +167,12 @@ contract Everest is Ownable {
     function _claimReward(address _user) internal {
         UserInfo storage user = userInfo[_user];
         if (user.staked > 0) {
-            uint256 pendingSlopesReward = user.staked.mul(accSlopesPerShare).div(1e12).sub(user.rewardDebt);
+        // SKISECURE: boost yield for Ski NFT owners
+
+            SkiPerks perks = SkiPerks(yeti.skiPerksAddress());
+            uint256 pendingBoost = perks.everestPerks(yeti.nftSkiAddress(), _user);
+
+            uint256 pendingSlopesReward = user.staked.mul(pendingBoost).div(100).mul(accSlopesPerShare).div(1e12).sub(user.rewardDebt);
             if (pendingSlopesReward > 0) {
                 totalPendingSlopes = totalPendingSlopes.sub(pendingSlopesReward);
                 user.claimed += pendingSlopesReward;
@@ -315,7 +321,9 @@ contract Everest is Ownable {
             info[8] = slopesPool.allowance(_user, address(this));
         }
         info[9] = userInfo[_user].staked;
-        info[10] = userInfo[_user].staked.mul(accSlopesPerShare).div(1e12).sub(userInfo[_user].rewardDebt);
+        SkiPerks perks = SkiPerks(yeti.skiPerksAddress());
+        uint256 pendingBoost = perks.everestPerks(yeti.nftSkiAddress(), _user);
+        info[10] = userInfo[_user].staked.mul(pendingBoost).div(100).mul(accSlopesPerShare).div(1e12).sub(userInfo[_user].rewardDebt);
         info[11] = userInfo[_user].claimed;
     }
 
